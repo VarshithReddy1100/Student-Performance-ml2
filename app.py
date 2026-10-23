@@ -1,30 +1,54 @@
 """Streamlit dashboard for Student Academic Performance Prediction."""
-from pathlib import Path
 import sys
-
-ROOT = Path(__file__).resolve().parent
-sys.path.insert(0, str(ROOT / "src"))
+from pathlib import Path
+from zipfile import BadZipFile
 
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
 import streamlit as st
 
-from student_performance.data import DEFAULT_DATA_PATH, load_data, prepare_targets
-from student_performance.evaluation import compare_models, get_feature_importances, make_learning_curve, regression_metrics, residual_table, tune_random_forest
+ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(ROOT / "src"))
+
+from student_performance.data import DEFAULT_DATA_PATH, download_dataset, load_data, prepare_targets
+from student_performance.evaluation import (
+    compare_models,
+    get_feature_importances,
+    make_learning_curve,
+    regression_metrics,
+    residual_table,
+    tune_random_forest,
+)
 from student_performance.models import classification_models, regression_models
-from student_performance.training import load_artifact, predict_student
+from student_performance.training import load_artifact, predict_student, train_experiments
 
 st.set_page_config(page_title="Student Performance ML", page_icon="🎓", layout="wide")
 st.title("🎓 Student Academic Performance Prediction")
 st.caption("Explore leakage-safe regression and classification experiments on the UCI student-mat dataset.")
 
 if not DEFAULT_DATA_PATH.exists():
-    st.warning("Dataset is not downloaded. In PowerShell run: python scripts/download_data.py")
-    st.stop()
+    try:
+        with st.spinner("Downloading the UCI Student Performance dataset..."):
+            download_dataset(DEFAULT_DATA_PATH)
+    except (OSError, BadZipFile) as error:
+        st.error("The UCI dataset is not included in the repository and could not be downloaded automatically.")
+        st.code(f"Download error: {error}")
+        st.info("Check the Streamlit app logs and network access to archive.ics.uci.edu, then reboot the app.")
+        st.stop()
 
 frame = load_data(DEFAULT_DATA_PATH)
 X, y_reg, y_clf = prepare_targets(frame)
+
+
+@st.cache_resource
+def ensure_models_are_trained() -> bool:
+    """Create model artifacts once per app process when deployment has no artifacts."""
+    if not (ROOT / "artifacts/best_regression.joblib").exists() or not (ROOT / "artifacts/best_classification.joblib").exists():
+        train_experiments(DEFAULT_DATA_PATH, ROOT / "artifacts")
+    return True
+
+
 with st.sidebar:
     st.header("Project overview")
     st.write(f"**Students:** {len(frame)}")
@@ -102,9 +126,10 @@ elif page == "Predict a student":
     task = st.radio("Output", ["Regression (G3 grade)", "Classification (performance band)"], horizontal=True)
     artifact_task = "regression" if task.startswith("Regression") else "classification"
     try:
+        ensure_models_are_trained()
         artifact = load_artifact(artifact_task)
-    except FileNotFoundError as error:
-        st.warning(str(error))
+    except (OSError, ValueError) as error:
+        st.error(f"Could not prepare the model artifact: {error}")
         st.stop()
     st.write(f"Using trained **{artifact['best_model_name']}**. Enter student details; grades G1/G2 are not used.")
     values = {}
