@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Data and generated artifacts (UCI dataset is downloaded separately)
+data/raw/*.csv
+artifacts/*.joblib
+artifacts/*.json
+artifacts/*.png
+artifacts/*.csv
+
+# Streamlit / editor
+.streamlit/secrets.toml
+.vscode/
+.DS_Store
+Thumbs.db
